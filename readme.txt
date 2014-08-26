@@ -32,6 +32,13 @@ If you'd like to test that the plugin works, follow these steps (after you've co
 4. Visit your website again and you should be automatically logged in
 
 
+== Frequently Asked Questions ==
+
+= Where is the wp-admin settings? =
+
+There are no settings to control at the moment. The plugin is incredibly simple and no interface is needed.
+
+
 == Changelog ==
 
 = 1.0.0 =

@@ -1,11 +1,11 @@
 <?php 
   
     /*
-    Plugin Name: WordPres Persistent Login
+    Plugin Name: WP Persistent Login
     Plugin URI: 
-    Description: Keep users logged into your website forever, unless they explicitly log out. Requires ACF.
+    Description: Keep users logged into your website forever, unless they explicitly log out.
     Author: B9 Media Ltd
-    Version: 1.0.0
+    Version: 1.0.1
     Author URI: http://b9media.co.uk
     */
     
@@ -28,86 +28,136 @@
 	*/
     
     include_once( ABSPATH . 'wp-admin/includes/plugin.php' );
-	 
-	
-	// check if ACF is active   
-    if ( is_plugin_active( 'advanced-custom-fields/acf.php' ) ) :
-     
-     	// register ACF field to store the users login key
-		if(function_exists("register_field_group")) :
-			register_field_group(array (
-			'id' => 'acf_persistent-login',
-			'title' => 'Persistent Login',
-			'fields' => array (
-				array (
-					'key' => 'field_53f476cb9c562',
-					'label' => 'Login Key',
-					'name' => 'login_key',
-					'type' => 'text',
-					'instructions' => 'Login Key for Persistent Login Plugin to control users sessions. Please do not change.',
-					'default_value' => '',
-					'placeholder' => '',
-					'prepend' => '',
-					'append' => '',
-					'formatting' => 'none',
-					'maxlength' => '',
-				),
-			),
-			'location' => array (
-				array (
-					array (
-						'param' => 'ef_user',
-						'operator' => '==',
-						'value' => 'all',
-						'order_no' => 0,
-						'group_no' => 0,
-					),
-				),
-			),
-			'options' => array (
-				'position' => 'normal',
-				'layout' => 'no_box',
-				'hide_on_screen' => array (
-				),
-			),
-			'menu_order' => 0,
-			));
-		endif;
+    
+    	
+	    // install new features
+	    global $pl_db_version;
+		$pl_db_version = '1.0';
 		
+		function pl_install() {
+			
+			// fixes bug with phpFastCGI
+			ini_set('zlib.output_handler', '');
+			
+			global $wpdb;
+
+			// if updating, cretae new table & migrate data
+			if( $wpdb->get_var("SHOW TABLES LIKE '" . $wpdb->prefix . "pl_logins'") != $wpdb->prefix . 'pl_logins' ) :
 		
+				
+			// create new table
+				global $pl_db_version;
+			
+				$table_name = $wpdb->prefix . 'pl_logins';
+				
+				/*
+				 * We'll set the default character set and collation for this table.
+				 * If we don't do this, some characters could end up being converted 
+				 * to just ?'s when saved in our table.
+				 */
+				$charset_collate = '';
+			
+				if ( ! empty( $wpdb->charset ) ) {
+				  $charset_collate = "DEFAULT CHARACTER SET {$wpdb->charset}";
+				}
+			
+				if ( ! empty( $wpdb->collate ) ) {
+				  $charset_collate .= " COLLATE {$wpdb->collate}";
+				}
+			
+				$sql = "CREATE TABLE $table_name (
+					id mediumint(9) NOT NULL AUTO_INCREMENT,
+					user INT NOT NULL,
+					login_key CHAR(40) NOT NULL,
+					UNIQUE KEY id (id)
+				) $charset_collate;";
+			
+				require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+				dbDelta( $sql );
+			
+				add_option( 'pl_db_version', $pl_db_version );
+
+			
+			
+
+			// transfer data to new table	
+				global $wpdb;
+		
+				$user_meta_table = $wpdb->prefix .'usermeta';
+				$current_logins = $wpdb->get_results("SELECT * FROM $user_meta_table WHERE meta_key = 'login_key' OR meta_key = '_login_key'");
+				
+				foreach( $current_logins as $current_login ) :
+					
+					if( $current_login->meta_key == 'login_key' ) :
+					
+						$row = $current_login->umeta_id;
+						$user = $current_login->user_id;
+						$key = $current_login->meta_value;
+						
+						$wpdb->insert( $wpdb->prefix .'pl_logins', array( 'user' => $user, 'login_key' => $key ) );
+						$wpdb->delete( $user_meta_table, array( 'umeta_id' => $row ), $where_format = null );
+					
+					elseif( $current_login->meta_key == '_login_key' ) :
+					
+						$row = $current_login->umeta_id;
+						$wpdb->delete( $user_meta_table, array( 'umeta_id' => $row ), $where_format = null );
+						
+					endif;
+				
+				endforeach;
+			
+			
+			endif;
+			
+						
+		}
+		register_activation_hook( __FILE__, 'pl_install' );
+
+		
+		 
 		
 		// if the user isn't logged in, check for a valid cookie
 	    function pl_login_check() {
+	    	
+	    	// fixes bug with phpFastCGI
+	    	ini_set('zlib.output_handler', '');
 	    
 		    if( !is_user_logged_in() ) :
 					
 				// check if user has cookies
 				if ( isset($_COOKIE['pl_i']) && isset($_COOKIE['pl_k']) ) :
 					
-					// query that checkes if the cookie key === db key
-					$args = array(
-						'meta_key' => 'login_key',
-						'meta_value' => $_COOKIE['pl_k'],
-						'meta_compare' => '=',
-						'fields' => 'ID',
-						'include' => $_COOKIE['pl_i']
-					);
-					$user_query = new WP_User_Query($args);
+					// store cookie info
+					$id = $_COOKIE['pl_i'];
+					$old_key = $_COOKIE['pl_k'];
 					
-					// if there is a result
-					if( $user_query->results[0] != '' || $user_query->results[0] != NULL ) :
-														
-						// get user id and login name
-						$user_id = $user_query->results[0];
-						$user_login = get_user_by( 'id', $user_id );
+					// check if user is in db
+					global $wpdb;
+					$table = $wpdb->prefix .'pl_logins';
+					$user_check = $wpdb->get_results($wpdb->prepare("SELECT * FROM $table WHERE user = %d AND login_key = %s", $id, $old_key));
+					
+					// if valid user is in db
+					if( $user_check == true ) :
+					
+						// generate new key for user
+						$salt = wp_generate_password(20); // 20 character "random" string
+						$key = sha1($salt . uniqid(time(), true));
+									
+						// set new cookies
+						setcookie("pl_i", $id, time()+31536000);  /* expire in 1 year */
+						setcookie("pl_k", $key, time()+31536000);  /* expire in 1 year */
+						
+						// update the db
+						$wpdb->update( $wpdb->prefix .'pl_logins', array( 'login_key' => $key ), array( 'user' => $id ), $format = null, $where_format = null );
 						
 						// log the user in
-						wp_set_current_user( $user_id, $user_login->user_login );
-						wp_set_auth_cookie( $user_id );
-						
+						$user_login = get_user_by( 'id', $id );
+						wp_set_current_user( $id, $user_login->user_login );
+						wp_set_auth_cookie( $id );						
 						do_action( 'wp_login', $user_login->user_login );
 					
 					endif;
+					
 					
 				endif; // end if cookies
 							
@@ -116,64 +166,80 @@
 		add_action('wp', 'pl_login_check');
 		
 		
-		
-		// remove the users cookie when they click logout
-		function pl_remove_user_cookie() {
-	
-			unset($_COOKIE['pl_i']);
-	        unset($_COOKIE['pl_k']);
-	        setcookie('pl_i', null, -1, '/');
-	        setcookie('pl_k', null, -1, '/');
-		
-		}
-		add_action('wp_logout', 'pl_remove_user_cookie');
 	    
 	
 		
 		// when a user is logged in, reset their cookie
 		function pl_set_user_cookie($user_login) {
-					
-				// if they have cookies, delete them
-				if ( isset($_COOKIE['pl_i']) && isset($_COOKIE['pl_k']) ) :
-		            unset($_COOKIE['pl_i']);
-		            unset($_COOKIE['pl_k']);
-				endif;
+			
+			// fixes bug with phpFastCGI
+			ini_set('zlib.output_handler', '');
 				
-				$user_id = get_user_by( 'login', $user_login );
+			// get user info
+			$user_id = get_user_by( 'login', $user_login );
+			$id = $user_id->ID;
+			
+			// check if user is in db
+			global $wpdb;
+			$table = $wpdb->prefix .'pl_logins';
+			$user_check = $wpdb->get_results("SELECT login_key FROM $table WHERE user = $id");
+			
+			
+			// if there's a match in the db
+			if( $user_check == true ) :
+			
+				// check if cookie matches db key
+				if( $user_check[0]->login_key == $_COOKIE['pl_k'] ) :
+					
+					// generate new key for user
+					$salt = wp_generate_password(20); // 20 character "random" string
+					$key = sha1($salt . uniqid(time(), true));
+								
+					// set new cookies
+					setcookie("pl_i", $id, time()+31536000);  /* expire in 1 year */
+					setcookie("pl_k", $key, time()+31536000);  /* expire in 1 year */
+					
+					// update the db
+					$wpdb->update( $wpdb->prefix .'pl_logins', array( 'login_key' => $key ), array( 'user' => $id ), $format = null, $where_format = null );
+				
+				else :
+				
+					wp_logout();
+				
+				endif;	
+			
+			// if not in db, add them to it
+			else :
 				
 				// generate new key for user
 				$salt = wp_generate_password(20); // 20 character "random" string
 				$key = sha1($salt . uniqid(time(), true));
 							
 				// set new cookies
-				setcookie("pl_i", $user_id->ID, time()+31536000);  /* expire in 1 year */
-				
+				setcookie("pl_i", $id, time()+31536000);  /* expire in 1 year */
 				setcookie("pl_k", $key, time()+31536000);  /* expire in 1 year */
 				
-				// update the db
-				update_field('field_53f476cb9c562', $key, 'user_'.$user_id->ID.'');
-		
+				// add user to the db
+				$wpdb->insert( $wpdb->prefix .'pl_logins', array( 'user' => $id, 'login_key' => $key ) );
+			
+			endif;
+							
 		}
 		add_action('wp_login', 'pl_set_user_cookie', 10, 1);
-
-
-
-	else : 
-
-
-
-		// if ACF isn't installed, give notice.
-		function my_admin_notice() {
-		    ?>
-		    <div class="error">
-		        <p>Please install/activate the Advanced Custom Fields plugin to allow WP Persistent Login to run.</p>
-		    </div>
-		    <?php
+		
+		
+		
+		// remove the users cookie when they click logout
+		function pl_remove_user_cookie() {
+	
+			unset($_COOKIE['pl_i']);
+	        unset($_COOKIE['pl_k']);
+	        setcookie('pl_i', '', time() - 3600);
+	        setcookie('pl_k', '', time() - 3600);
+		
 		}
-		add_action( 'admin_notices', 'my_admin_notice' );
+		add_action('wp_logout', 'pl_remove_user_cookie');
+		
 
-
-			
-	endif;
 	     
 ?>

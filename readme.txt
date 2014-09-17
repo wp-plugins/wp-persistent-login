@@ -4,7 +4,7 @@ Donate link:
 Tags: login, persistent login
 Requires at least: 3.9.2
 Tested up to: 4.0.0
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,7 +16,6 @@ WordPress Persistent Login is a simple plugin that keeps users logged into your 
 
 It requires no set-up, simply install and save your users time by keeping them logged into your website securely. This plugin will eliminate any session expired/please log-in messages that users might see as well as avoid the annoyance of forgetting usernames/passwords.
 
-WP Persistent Login requires the Advanced Custom Fields plugin to function.
 
 == Installation ==
 
@@ -33,6 +32,11 @@ If you'd like to test that the plugin works, follow these steps (after you've co
 
 
 == Changelog ==
+
+= 1.0.1 =
+* Removes requirement to have ACF installed, please disable ACF if you don't use it for anything else
+* Updated logic
+* General bug fixing
 
 = 1.0.0 =
 * WordPress Persistent Login Plugin launch

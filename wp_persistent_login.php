@@ -5,7 +5,7 @@
     Plugin URI: 
     Description: Keep users logged into your website forever, unless they explicitly log out.
     Author: B9 Media Ltd
-    Version: 1.0.1
+    Version: 1.0.2
     Author URI: http://b9media.co.uk
     */
     
@@ -86,25 +86,29 @@
 				$user_meta_table = $wpdb->prefix .'usermeta';
 				$current_logins = $wpdb->get_results("SELECT * FROM $user_meta_table WHERE meta_key = 'login_key' OR meta_key = '_login_key'");
 				
-				foreach( $current_logins as $current_login ) :
-					
-					if( $current_login->meta_key == 'login_key' ) :
-					
-						$row = $current_login->umeta_id;
-						$user = $current_login->user_id;
-						$key = $current_login->meta_value;
-						
-						$wpdb->insert( $wpdb->prefix .'pl_logins', array( 'user' => $user, 'login_key' => $key ) );
-						$wpdb->delete( $user_meta_table, array( 'umeta_id' => $row ), $where_format = null );
-					
-					elseif( $current_login->meta_key == '_login_key' ) :
-					
-						$row = $current_login->umeta_id;
-						$wpdb->delete( $user_meta_table, array( 'umeta_id' => $row ), $where_format = null );
-						
-					endif;
+				if( $current_logins == true ) :
 				
-				endforeach;
+					foreach( $current_logins as $current_login ) :
+						
+						if( $current_login->meta_key == 'login_key' ) :
+						
+							$row = $current_login->umeta_id;
+							$user = $current_login->user_id;
+							$key = $current_login->meta_value;
+							
+							$wpdb->insert( $wpdb->prefix .'pl_logins', array( 'user' => $user, 'login_key' => $key ) );
+							$wpdb->delete( $user_meta_table, array( 'umeta_id' => $row ), $where_format = null );
+						
+						elseif( $current_login->meta_key == '_login_key' ) :
+						
+							$row = $current_login->umeta_id;
+							$wpdb->delete( $user_meta_table, array( 'umeta_id' => $row ), $where_format = null );
+							
+						endif;
+					
+					endforeach;
+					
+				endif;
 			
 			
 			endif;
@@ -138,17 +142,6 @@
 					
 					// if valid user is in db
 					if( $user_check == true ) :
-					
-						// generate new key for user
-						$salt = wp_generate_password(20); // 20 character "random" string
-						$key = sha1($salt . uniqid(time(), true));
-									
-						// set new cookies
-						setcookie("pl_i", $id, time()+31536000);  /* expire in 1 year */
-						setcookie("pl_k", $key, time()+31536000);  /* expire in 1 year */
-						
-						// update the db
-						$wpdb->update( $wpdb->prefix .'pl_logins', array( 'login_key' => $key ), array( 'user' => $id ), $format = null, $where_format = null );
 						
 						// log the user in
 						$user_login = get_user_by( 'id', $id );
@@ -156,76 +149,62 @@
 						wp_set_auth_cookie( $id );						
 						do_action( 'wp_login', $user_login->user_login );
 					
-					endif;
+					endif; // end if user check
 					
 					
 				endif; // end if cookies
 							
-			endif;
+			endif; // end if is logged in
 		}
 		add_action('wp', 'pl_login_check');
 		
 		
-	    
 	
 		
-		// when a user is logged in, reset their cookie
+		// when a user is logged in, set/reset their cookie
 		function pl_set_user_cookie($user_login) {
 			
 			// fixes bug with phpFastCGI
 			ini_set('zlib.output_handler', '');
-				
+			
 			// get user info
 			$user_id = get_user_by( 'login', $user_login );
 			$id = $user_id->ID;
+			
+			// generate new key for user
+			$salt = wp_generate_password(20); // 20 character "random" string
+			$key = sha1($salt . uniqid(time(), true));
+						
+			// set new cookies
+			setcookie("pl_i", $id, time()+31536000);  /* expire in 1 year */
+			setcookie("pl_k", $key, time()+31536000);  /* expire in 1 year */
 			
 			// check if user is in db
 			global $wpdb;
 			$table = $wpdb->prefix .'pl_logins';
 			$user_check = $wpdb->get_results("SELECT login_key FROM $table WHERE user = $id");
-			
-			
-			// if there's a match in the db
+		
+			// if user is already in db
 			if( $user_check == true ) :
-			
-				// check if cookie matches db key
-				if( $user_check[0]->login_key == $_COOKIE['pl_k'] ) :
-					
-					// generate new key for user
-					$salt = wp_generate_password(20); // 20 character "random" string
-					$key = sha1($salt . uniqid(time(), true));
-								
-					// set new cookies
-					setcookie("pl_i", $id, time()+31536000);  /* expire in 1 year */
-					setcookie("pl_k", $key, time()+31536000);  /* expire in 1 year */
-					
+		
 					// update the db
-					$wpdb->update( $wpdb->prefix .'pl_logins', array( 'login_key' => $key ), array( 'user' => $id ), $format = null, $where_format = null );
-				
-				else :
-				
-					wp_logout();
-				
-				endif;	
+					$wpdb->update( 
+						$wpdb->prefix .'pl_logins', 
+						array( 'login_key' => $key ), 
+						array( 'user' => $id ), $format = null, 
+						$where_format = null 
+					);
 			
-			// if not in db, add them to it
-			else :
-				
-				// generate new key for user
-				$salt = wp_generate_password(20); // 20 character "random" string
-				$key = sha1($salt . uniqid(time(), true));
-							
-				// set new cookies
-				setcookie("pl_i", $id, time()+31536000);  /* expire in 1 year */
-				setcookie("pl_k", $key, time()+31536000);  /* expire in 1 year */
-				
-				// add user to the db
+			else :	
+
+				// add new row to db
 				$wpdb->insert( $wpdb->prefix .'pl_logins', array( 'user' => $id, 'login_key' => $key ) );
-			
-			endif;
+	
+			endif; // end if user check
 							
 		}
 		add_action('wp_login', 'pl_set_user_cookie', 10, 1);
+		
 		
 		
 		
@@ -239,7 +218,6 @@
 		
 		}
 		add_action('wp_logout', 'pl_remove_user_cookie');
-		
 
 	     
 ?>

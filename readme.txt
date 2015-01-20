@@ -3,8 +3,8 @@ Contributors: b9media
 Donate link: 
 Tags: login, persistent login
 Requires at least: 3.9.2
-Tested up to: 4.0.0
-Stable tag: 1.0.1
+Tested up to: 4.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -26,12 +26,16 @@ It requires no set-up, simply install and save your users time by keeping them l
 If you'd like to test that the plugin works, follow these steps (after you've completed those above):
 
 1. Quit your browser
-2. Open your browser and log back into your website
+2. Open your browser and log back into your website (this will activate WP Persistent Login for you)
 3. Quit your browser again
 4. Visit your website again and you should be automatically logged in
 
 
 == Changelog ==
+
+= 1.0.2 =
+* Updates plugin to be compatable with WP 4.1
+* Fixes login/logout redirect issues
 
 = 1.0.1 =
 * Removes requirement to have ACF installed, please disable ACF if you don't use it for anything else
